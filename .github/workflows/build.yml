@@ -81,90 +81,111 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
+      - name: Install universal2 Python
+        run: |
+          set -euo pipefail
+          curl -LO https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg
+          sudo installer -pkg python-3.12.10-macos11.pkg -target /
+          echo "/Library/Frameworks/Python.framework/Versions/3.12/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
-        run: pip install -r requirements-macos.txt
+        run: |
+          set -euo pipefail
+          python3.12 -m pip install --upgrade pip setuptools wheel
+          python3.12 -m pip install delocate==0.13.0
 
-      - name: Install pyinstaller
-        run: pip install pyinstaller
+          mkdir -p wheelhouse/arm64 wheelhouse/x86_64 wheelhouse/universal2
+
+          python3.12 -m pip download \
+            --only-binary=:all: \
+            --platform macosx_11_0_arm64 \
+            --python-version 3.12 \
+            --implementation cp \
+            -d wheelhouse/arm64 \
+            Pillow==12.1.0 \
+            psutil==7.0.0
+
+          python3.12 -m pip download \
+            --only-binary=:all: \
+            --platform macosx_10_13_x86_64 \
+            --python-version 3.12 \
+            --implementation cp \
+            -d wheelhouse/x86_64 \
+            Pillow==12.1.0
+
+          python3.12 -m pip download \
+            --only-binary=:all: \
+            --platform macosx_10_9_x86_64 \
+            --python-version 3.12 \
+            --implementation cp \
+            -d wheelhouse/x86_64 \
+            psutil==7.0.0
+
+          delocate-merge \
+            wheelhouse/arm64/pillow-12.1.0-*.whl \
+            wheelhouse/x86_64/pillow-12.1.0-*.whl \
+            -w wheelhouse/universal2
+
+          delocate-merge \
+            wheelhouse/arm64/psutil-7.0.0-*.whl \
+            wheelhouse/x86_64/psutil-7.0.0-*.whl \
+            -w wheelhouse/universal2
+
+          python3.12 -m pip install --no-deps wheelhouse/universal2/*.whl
+          python3.12 -m pip install -r requirements-macos.txt
+          python3.12 -m pip install pyinstaller==6.13.0
 
       - name: Create macOS icon from ICO
         run: |
+          set -euo pipefail
           chmod +x packaging/create_icon.sh
           packaging/create_icon.sh
 
       - name: Build app with PyInstaller
-        run: pyinstaller packaging/macos.spec --noconfirm
+        run: python3.12 -m PyInstaller packaging/macos.spec --noconfirm
 
-      - name: Upload app bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: TgWsProxy-app-arm64
-          path: "dist/TG WS Proxy.app"
-
-  build-macos-intel:
-    runs-on: macos-15-intel
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Install dependencies
-        run: pip install -r requirements-macos.txt
-
-      - name: Install pyinstaller
-        run: pip install pyinstaller
-
-      - name: Create macOS icon from ICO
+      - name: Validate universal2 app bundle
         run: |
-          chmod +x packaging/create_icon.sh
-          packaging/create_icon.sh
+          set -euo pipefail
+          found=0
+          while IFS= read -r -d '' file; do
+            if file "$file" | grep -q "Mach-O"; then
+              found=1
+              archs="$(lipo -archs "$file" 2>/dev/null || true)"
+              case "$archs" in
+                *arm64*x86_64*|*x86_64*arm64*) ;;
+                *)
+                  echo "Missing universal2 slices in $file: ${archs:-unknown}" >&2
+                  exit 1
+                  ;;
+              esac
+            fi
+          done < <(find "dist/TG WS Proxy.app" -type f -print0)
 
-      - name: Build app with PyInstaller
-        run: pyinstaller packaging/macos.spec --noconfirm
+          if [ "$found" -eq 0 ]; then
+            echo "No Mach-O files found in app bundle" >&2
+            exit 1
+          fi
 
-      - name: Upload app bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: TgWsProxy-app-x86_64
-          path: "dist/TG WS Proxy.app"
-
-  build-macos-universal:
-    needs: [build-macos, build-macos-intel]
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download arm64 app
-        uses: actions/download-artifact@v4
-        with:
-          name: TgWsProxy-app-arm64
-          path: "dist/arm64/TG WS Proxy.app"
-
-      - name: Download x86_64 app
-        uses: actions/download-artifact@v4
-        with:
-          name: TgWsProxy-app-x86_64
-          path: "dist/x86_64/TG WS Proxy.app"
-
-      - name: Merge into universal2 app and create DMG
+      - name: Create DMG
         run: |
-          chmod +x packaging/merge_universal2.sh
-          packaging/merge_universal2.sh \
-            "dist/arm64/TG WS Proxy.app" \
-            "dist/x86_64/TG WS Proxy.app" \
-            "dist/TG WS Proxy.app"
+          set -euo pipefail
+          APP_NAME="TG WS Proxy"
+          DMG_TEMP="dist/dmg_temp"
+
+          rm -rf "$DMG_TEMP"
+          mkdir -p "$DMG_TEMP"
+          cp -R "dist/${APP_NAME}.app" "$DMG_TEMP/"
+          ln -s /Applications "$DMG_TEMP/Applications"
+
+          hdiutil create \
+            -volname "$APP_NAME" \
+            -srcfolder "$DMG_TEMP" \
+            -ov \
+            -format UDZO \
+            "dist/TgWsProxy.dmg"
+
+          rm -rf "$DMG_TEMP"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -173,7 +194,7 @@ jobs:
           path: dist/TgWsProxy.dmg
 
   release:
-    needs: [build, build-win7, build-macos-universal]
+    needs: [build, build-win7, build-macos]
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.make_release == 'true' }}
     steps:
