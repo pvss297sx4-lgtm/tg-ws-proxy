@@ -1117,12 +1117,15 @@ def main():
     ap.add_argument('--host', type=str, default='127.0.0.1',
                     help='Listen host (default 127.0.0.1)')
     ap.add_argument('--dc-ip', metavar='DC:IP', action='append',
-                    default=['2:149.154.167.220', '4:149.154.167.220'],
+                    default=[],
                     help='Target IP for a DC, e.g. --dc-ip 1:149.154.175.205'
                          ' --dc-ip 2:149.154.167.220')
     ap.add_argument('-v', '--verbose', action='store_true',
                     help='Debug logging')
     args = ap.parse_args()
+
+    if not args.dc_ip:
+        args.dc_ip = ['2:149.154.167.220', '4:149.154.167.220']
 
     try:
         dc_opt = parse_dc_ip_list(args.dc_ip)
