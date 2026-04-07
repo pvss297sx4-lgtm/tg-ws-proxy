@@ -7,7 +7,7 @@ name = "tg-ws-proxy"
 dynamic=["version"]
 
 description = "Telegram Desktop WebSocket Bridge Proxy"
-readme = "README.md"
+readme = "docs/README.md"
 requires-python = ">=3.8"
 
 license = { name = "MIT", file = "LICENSE" }
