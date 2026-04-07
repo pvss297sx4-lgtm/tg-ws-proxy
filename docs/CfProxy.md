@@ -8,7 +8,7 @@
 Cloudflare имеет лимиты на одновременное количество подключений WS. Домен по умолчанию может перестать работать в любой момент. 
 
 ## Настройка своего домена
-1. Добавьте свой домен в Cloudflare (либо купив у них напрямую, либо поменяв NS сервера: https://developers.cloudflare.com/dns/zone-setups/full-setup/setup/)
+1. Добавьте свой домен в Cloudflare (либо купив у них напрямую, либо поменяв NS сервера: https://developers.cloudflare.com/dns/zone-setups/full-setup/setup/). Домены стоят +- 150 рублей на год, подойдёт любой.
 
 2. В `SSL/TLS` -> `Overview` выставьте режим **Flexible**
 
